@@ -5,7 +5,7 @@ import axios from 'axios';
 
 const axiosGitHubGraphQl = axios.create({
   baseURL: 'https://api.github.com/graphql',
-  headers: {Authorization: 'bearer 684832c792c679ea07e07a9b0f34a54b8d56a4da'}
+  headers: {Authorization: 'bearer 00425d5265f7ee3557193116019f49762a4f70c5'}
 });
 
 const getIssuesOfRepositoryQuery = () => `
@@ -49,7 +49,7 @@ const getIssuesOfRepository = path => {
 };
 
 const resolveIssuesQuery = queryResult => () => ({
-  organization: queryResult.data.data.organization,
+  organization: queryResult.data.data ? queryResult.data.data.organization : null,
   errors: queryResult.data.errors,
 });
 
@@ -78,6 +78,10 @@ class App extends Component {
     getIssuesOfRepository(path).then(result => this.setState(resolveIssuesQuery(result)));
   }
 
+  onFetchMoreIssues = () => {
+
+  }
+
   render() {
     const {path, organization} = this.state;
 
@@ -96,11 +100,12 @@ class App extends Component {
             style={{width: '300px'}}
             value={path}
           />
+
           <button type="submit">Search</button>
 
           <hr/>
           {organization ? (
-            <Organization organization={organization}/>
+            <Organization organization={organization} onFetchMoreIssues={this.onFetchMoreIssues}/>
           ) : <p>No information yet.</p>}
         </form>
       </div>
@@ -108,7 +113,7 @@ class App extends Component {
   }
 }
 
-const Repository = ({repository}) => {
+const Repository = ({repository, onFetchMoreIssues}) => {
   return (
     <div>
       <p>
@@ -127,11 +132,13 @@ const Repository = ({repository}) => {
           </li>
         ))}
       </ul>
+      <hr/>
+      <button type="button" onClick={onFetchMoreIssues}>More</button>
     </div>
   )
 }
 
-const Organization = ({organization, errors}) => {
+const Organization = ({organization, errors, onFetchMoreIssues}) => {
   if (errors) {
     return (
       <p>
@@ -146,7 +153,7 @@ const Organization = ({organization, errors}) => {
         <strong>Issues from Organization:</strong>
         <a href={organization.url}>{organization.name}</a>
       </p>
-      <Repository repository={organization.repository}/>
+      <Repository repository={organization.repository} onFetchMoreIssues={onFetchMoreIssues}/>
     </div>
   )
 };
