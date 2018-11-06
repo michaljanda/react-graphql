@@ -5,18 +5,20 @@ import axios from 'axios';
 
 const axiosGitHubGraphQl = axios.create({
   baseURL: 'https://api.github.com/graphql',
-  headers: {Authorization: 'bearer 00425d5265f7ee3557193116019f49762a4f70c5'}
+  headers: {Authorization: 'bearer 548ec9c1f65bf856c3591dda16db844474423895'}
 });
 
 const getIssuesOfRepositoryQuery = () => `
-  query ($organization: String!, $repository: String!) {
+  query ($organization: String!, $repository: String!, $cursor: String) {
     organization(login: $organization) {
       name
       url
       repository(name: $repository) {
+        id
         name
         url
-        issues(last: 5, states: [OPEN]) {
+        viewerHasStarred
+        issues(first: 3, after: $cursor, states: [OPEN]) {
           edges {
             node {
               id
@@ -32,6 +34,11 @@ const getIssuesOfRepositoryQuery = () => `
               }
             }
           }
+          totalCount
+          pageInfo {
+            endCursor
+            hasNextPage
+          }
         }
       }
     }
@@ -39,19 +46,43 @@ const getIssuesOfRepositoryQuery = () => `
   
 `;
 
-const getIssuesOfRepository = path => {
+const getIssuesOfRepository = (path, cursor) => {
   const [organization, repository] = path.split('/');
 
   return axiosGitHubGraphQl.post('', {
     query: getIssuesOfRepositoryQuery(organization, repository),
-    variables: {organization, repository}
+    variables: {organization, repository, cursor}
   });
 };
 
-const resolveIssuesQuery = queryResult => () => ({
-  organization: queryResult.data.data ? queryResult.data.data.organization : null,
-  errors: queryResult.data.errors,
-});
+const resolveIssuesQuery = (queryResult, cursor) => state => {
+  const { data, errors } = queryResult.data;
+
+  if (!cursor) {
+    return {
+      organization: data.organization,
+      errors,
+    };
+  }
+
+  const { edges: oldIssues } = state.organization.repository.issues;
+  const { edges: newIssues } = data.organization.repository.issues;
+  const updatedIssues = [...oldIssues, ...newIssues];
+
+  return {
+    organization: {
+      ...data.organization,
+      repository: {
+        ...data.organization.repository,
+        issues: {
+          ...data.organization.repository.issues,
+          edges: updatedIssues,
+        },
+      },
+    },
+    errors,
+  };
+};
 
 class App extends Component {
 
@@ -74,16 +105,17 @@ class App extends Component {
     event.preventDefault();
   }
 
-  onFetchFromGitHub = path => {
-    getIssuesOfRepository(path).then(result => this.setState(resolveIssuesQuery(result)));
+  onFetchFromGitHub = (path, cursor) => {
+    getIssuesOfRepository(path, cursor).then(result => this.setState(resolveIssuesQuery(result, cursor)));
   }
 
   onFetchMoreIssues = () => {
-
+    const {endCursor} = this.state.organization.repository.issues.pageInfo;
+    this.onFetchFromGitHub(this.state.path, endCursor)
   }
 
   render() {
-    const {path, organization} = this.state;
+    const {path, organization, errors} = this.state;
 
     return (
       <div className="App">
@@ -104,9 +136,12 @@ class App extends Component {
           <button type="submit">Search</button>
 
           <hr/>
-          {organization ? (
-            <Organization organization={organization} onFetchMoreIssues={this.onFetchMoreIssues}/>
-          ) : <p>No information yet.</p>}
+          {organization && (
+            <Organization organization={organization} onFetchMoreIssues={() => this.onFetchMoreIssues()}/>
+          )}
+          {errors && (
+            JSON.stringify(errors)
+          )}
         </form>
       </div>
     );
@@ -133,29 +168,25 @@ const Repository = ({repository, onFetchMoreIssues}) => {
         ))}
       </ul>
       <hr/>
-      <button type="button" onClick={onFetchMoreIssues}>More</button>
+      {repository.issues.pageInfo.hasNextPage && (
+        <button type="button" onClick={onFetchMoreIssues}>More</button>
+      )}
     </div>
   )
 }
 
 const Organization = ({organization, errors, onFetchMoreIssues}) => {
-  if (errors) {
+  if (! errors) {
     return (
-      <p>
-        <strong>Something went wrong:</strong>
-        {errors.map(error => error.message).join(' ')}
-      </p>
+      <div>
+        <p>
+          <strong>Issues from Organization:</strong>
+          <a href={organization.url}>{organization.name}</a>
+        </p>
+        <Repository repository={organization.repository} onFetchMoreIssues={onFetchMoreIssues}/>
+      </div>
     )
   }
-  return (
-    <div>
-      <p>
-        <strong>Issues from Organization:</strong>
-        <a href={organization.url}>{organization.name}</a>
-      </p>
-      <Repository repository={organization.repository} onFetchMoreIssues={onFetchMoreIssues}/>
-    </div>
-  )
 };
 
 
